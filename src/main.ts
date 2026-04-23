@@ -94,6 +94,13 @@ interface CampfireStation {
   prompt: string;
 }
 
+interface SupplySubmitStation {
+  sprite: Phaser.GameObjects.Sprite;
+  shadow: Phaser.GameObjects.Ellipse;
+  title: string;
+  prompt: string;
+}
+
 interface NpcUnit {
   sprite: Phaser.GameObjects.Sprite;
   shadow: Phaser.GameObjects.Ellipse;
@@ -200,6 +207,7 @@ const STONE_GOLEM_TYPES: StoneGolemType[] = ['crimson_statue', 'azure_statue'];
 const CAMPFIRE_CRAFT_SOURCE_ID = 'scarlet_meat';
 const CAMPFIRE_CRAFT_OUTPUT_ID = 'campfire_meal';
 const CAMPFIRE_POSITION = { x: 845, y: 2148 } as const;
+const SUPPLY_SUBMIT_POSITION = { x: 1118, y: 2086 } as const;
 const PLAYER_SPAWN_POSITION = { x: CAMPFIRE_POSITION.x - 68, y: CAMPFIRE_POSITION.y } as const;
 const STONE_GOLEM_SPAWN_POINTS: Record<StoneGolemType, Array<{ x: number; y: number }>> = {
   crimson_statue: [
@@ -1491,6 +1499,8 @@ class MissionScene extends Phaser.Scene {
   };
 
   private lastFireAt = 0;
+  private reloadStartAt = 0;
+  private reloadDurationMs = 0;
   private reloadFinishAt = 0;
   private lastInteractAt = 0;
   private lastBagToggleAt = 0;
@@ -1542,6 +1552,17 @@ class MissionScene extends Phaser.Scene {
     homeBtn: Phaser.GameObjects.Rectangle;
     homeTxt: Phaser.GameObjects.Text;
   };
+  private settlementDialog?: {
+    bg: Phaser.GameObjects.Image;
+    dim: Phaser.GameObjects.Rectangle;
+    title: Phaser.GameObjects.Text;
+    message: Phaser.GameObjects.Text;
+    detail: Phaser.GameObjects.Text;
+    retryBtn: Phaser.GameObjects.Rectangle;
+    retryTxt: Phaser.GameObjects.Text;
+    homeBtn: Phaser.GameObjects.Rectangle;
+    homeTxt: Phaser.GameObjects.Text;
+  };
   private campfireConfirmDialog?: {
     panel: Phaser.GameObjects.Rectangle;
     title: Phaser.GameObjects.Text;
@@ -1560,8 +1581,12 @@ class MissionScene extends Phaser.Scene {
   private hudToggleLabel!: Phaser.GameObjects.Text;
   private interactionRing!: Phaser.GameObjects.Ellipse;
   private interactionWorldHint!: Phaser.GameObjects.Text;
-  private activeInteractionTarget?: { type: 'npc' | 'loot' | 'campfire'; ref: NpcUnit | LootContainer | CampfireStation };
+  private activeInteractionTarget?: {
+    type: 'npc' | 'loot' | 'campfire' | 'submit';
+    ref: NpcUnit | LootContainer | CampfireStation | SupplySubmitStation;
+  };
   private campfireStation?: CampfireStation;
+  private supplySubmitStation?: SupplySubmitStation;
 
   private hotbarSlots: Array<{ box: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; ammo: Phaser.GameObjects.Text }> = [];
 
@@ -1580,6 +1605,8 @@ class MissionScene extends Phaser.Scene {
   private recoveryUseHealAmount = 0;
   private recoveryProgressBar!: Phaser.GameObjects.Graphics;
   private recoveryProgressLabel!: Phaser.GameObjects.Text;
+  private reloadProgressBar!: Phaser.GameObjects.Graphics;
+  private reloadProgressLabel!: Phaser.GameObjects.Text;
 
   constructor() {
     super('MissionScene');
@@ -1604,6 +1631,8 @@ class MissionScene extends Phaser.Scene {
     this.load.image('elite_statue_crimson', '/assets/custom/elite_statue_crimson.png');
     this.load.image('elite_statue_azure', '/assets/custom/elite_statue_azure.png');
     this.load.image('rear_camp_tent', '/assets/custom/rear_camp_tent.png');
+    this.load.image('campfire_model', '/assets/custom/campfire_station.png');
+    this.load.image('mission_result_bg2', '/assets/custom/mission_result_bg2.webp');
     this.load.image('shouyue_state_idle', '/assets/custom/shouyue_idle.png');
     this.load.image('shouyue_state_walk', '/assets/custom/shouyue_walk.png');
     this.load.image('shouyue_state_aim', '/assets/custom/shouyue_snipe_aim.png');
@@ -1664,6 +1693,8 @@ class MissionScene extends Phaser.Scene {
     this.pressure = 0;
     this.elapsedMs = 0;
     this.lastFireAt = 0;
+    this.reloadStartAt = 0;
+    this.reloadDurationMs = 0;
     this.reloadFinishAt = 0;
     this.lastInteractAt = 0;
     this.lastBagToggleAt = 0;
@@ -1689,6 +1720,7 @@ class MissionScene extends Phaser.Scene {
     this.npcDialogueMemory.clear();
     this.activeInteractionTarget = undefined;
     this.campfireStation = undefined;
+    this.supplySubmitStation = undefined;
     this.sfxVariantIndex = {};
     this.eShotSfxWarned = false;
     this.hudCollapsed = true;
@@ -1714,6 +1746,7 @@ class MissionScene extends Phaser.Scene {
     this.npcDialogHideEvent?.remove(false);
     this.bannerHideEvent?.remove(false);
     this.failureDialog = undefined;
+    this.settlementDialog = undefined;
     this.campfireConfirmDialog = undefined;
     this.dialogueOverlay?.hide();
     this.dialogueOverlay?.clear();
@@ -1833,14 +1866,16 @@ class MissionScene extends Phaser.Scene {
     g.fillStyle(0x5d4e3a, 1).fillRect(10, 34, 16, 2);
     g.generateTexture('tower_model', 36, 54);
 
-    g.clear();
-    g.fillStyle(0x4f3526, 1).fillRect(8, 24, 24, 8);
-    g.fillStyle(0x6f4b34, 1).fillRect(6, 20, 12, 5);
-    g.fillStyle(0x6f4b34, 1).fillRect(22, 20, 12, 5);
-    g.fillStyle(0xffb365, 0.95).fillTriangle(20, 21, 14, 9, 26, 9);
-    g.fillStyle(0xffdc87, 0.78).fillTriangle(20, 18, 16, 11, 24, 11);
-    g.fillStyle(0xffe9b3, 0.6).fillTriangle(20, 15, 18, 12, 22, 12);
-    g.generateTexture('campfire_model', 40, 40);
+    if (!this.textures.exists('campfire_model')) {
+      g.clear();
+      g.fillStyle(0x4f3526, 1).fillRect(8, 24, 24, 8);
+      g.fillStyle(0x6f4b34, 1).fillRect(6, 20, 12, 5);
+      g.fillStyle(0x6f4b34, 1).fillRect(22, 20, 12, 5);
+      g.fillStyle(0xffb365, 0.95).fillTriangle(20, 21, 14, 9, 26, 9);
+      g.fillStyle(0xffdc87, 0.78).fillTriangle(20, 18, 16, 11, 24, 11);
+      g.fillStyle(0xffe9b3, 0.6).fillTriangle(20, 15, 18, 12, 22, 12);
+      g.generateTexture('campfire_model', 40, 40);
+    }
 
     g.clear();
     g.fillStyle(0x7f9156, 1).fillRoundedRect(2, 4, 20, 14, 3);
@@ -2550,11 +2585,11 @@ class MissionScene extends Phaser.Scene {
 
     const campfireX = CAMPFIRE_POSITION.x;
     const campfireY = CAMPFIRE_POSITION.y;
-    const campfireShadow = this.add.ellipse(campfireX, campfireY + 12, 28, 10, 0x000000, 0.24).setDepth(2);
-    this.add.circle(campfireX, campfireY - 7, 22, 0xff9e4e, 0.14).setDepth(6);
+    const campfireShadow = this.add.ellipse(campfireX, campfireY + 16, 44, 14, 0x000000, 0.24).setDepth(2);
+    this.add.circle(campfireX, campfireY - 10, 30, 0xff9e4e, 0.14).setDepth(6);
     const campfireSprite = this.add.sprite(campfireX, campfireY, 'campfire_model')
       .setDepth(7)
-      .setScale(1);
+      .setDisplaySize(72, 72);
     this.tweens.add({
       targets: campfireSprite,
       alpha: { from: 0.86, to: 1 },
@@ -2568,6 +2603,28 @@ class MissionScene extends Phaser.Scene {
       shadow: campfireShadow,
       title: '后营篝火',
       prompt: `消耗 ${CAMPFIRE_CRAFT_COST} 片赤甲肉合成熟食`,
+    };
+
+    const submitX = SUPPLY_SUBMIT_POSITION.x;
+    const submitY = SUPPLY_SUBMIT_POSITION.y;
+    const submitShadow = this.add.ellipse(submitX, submitY + 14, 34, 12, 0x000000, 0.2).setDepth(2);
+    this.add.circle(submitX, submitY - 16, 30, 0x9fd6ff, 0.08).setDepth(5);
+    const submitTexture = this.textures.exists('official_supply_box') ? 'official_supply_box' : 'medical_crate_model';
+    const submitSprite = this.add.sprite(submitX, submitY, submitTexture)
+      .setDepth(7)
+      .setDisplaySize(56, 56)
+      .setTint(0xbfdcf4);
+    this.add.text(submitX, submitY - 64, '物资提交处', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '20px',
+      color: '#d8e9f7',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(WORLD_LABEL_DEPTH);
+    this.supplySubmitStation = {
+      sprite: submitSprite,
+      shadow: submitShadow,
+      title: '主城提交处',
+      prompt: '提交关键补给，完成本次行动',
     };
 
     const duneShrubs = [
@@ -3009,8 +3066,10 @@ class MissionScene extends Phaser.Scene {
     this.createCrosshair();
     this.createDialogueOverlay();
     this.createFailureDialog();
+    this.createSettlementDialog();
     this.createCampfireConfirmDialog();
     this.createRecoveryProgressUi();
+    this.createReloadProgressUi();
     this.interactionRing = this.add.ellipse(0, 0, 68, 24, 0xffe2a2, 0.08)
       .setStrokeStyle(2, 0xffd48c, 0.75)
       .setDepth(24)
@@ -3117,6 +3176,152 @@ class MissionScene extends Phaser.Scene {
     [mask, retryBtn, homeBtn].forEach(setInputEnabled);
   }
 
+  private createSettlementDialog(): void {
+    const bg = this.add.image(VIEW_WIDTH / 2, VIEW_HEIGHT / 2, 'mission_result_bg2')
+      .setDisplaySize(VIEW_WIDTH, VIEW_HEIGHT)
+      .setDepth(UI_DEPTH_BASE + 140)
+      .setScrollFactor(0)
+      .setVisible(false);
+    const dim = this.add.rectangle(VIEW_WIDTH / 2, VIEW_HEIGHT / 2, VIEW_WIDTH, VIEW_HEIGHT, 0x000000, 0)
+      .setDepth(UI_DEPTH_BASE + 141)
+      .setScrollFactor(0)
+      .setVisible(false)
+      .setInteractive();
+    const title = this.add.text(VIEW_WIDTH / 2, 152, '行动结算', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '54px',
+      color: '#f3efe5',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(UI_DEPTH_BASE + 142).setScrollFactor(0).setVisible(false);
+    const message = this.add.text(VIEW_WIDTH / 2, 244, '', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '30px',
+      color: '#f4eee3',
+      align: 'center',
+      lineSpacing: 8,
+      wordWrap: { width: 920 },
+    }).setOrigin(0.5, 0.5).setDepth(UI_DEPTH_BASE + 142).setScrollFactor(0).setVisible(false);
+    const detail = this.add.text(VIEW_WIDTH / 2, 316, '', {
+      fontFamily: 'IBM Plex Mono, monospace',
+      fontSize: '16px',
+      color: '#2f3342',
+      align: 'center',
+      lineSpacing: 5,
+      wordWrap: { width: 900 },
+    }).setOrigin(0.5, 0).setDepth(UI_DEPTH_BASE + 142).setScrollFactor(0).setVisible(false);
+
+    const retryBtn = this.add.rectangle(VIEW_WIDTH - 364, VIEW_HEIGHT - 44, 220, 56, 0x264f56, 0.96)
+      .setStrokeStyle(2, 0x8dd0c2)
+      .setDepth(UI_DEPTH_BASE + 143)
+      .setScrollFactor(0)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    const retryTxt = this.add.text(VIEW_WIDTH - 364, VIEW_HEIGHT - 44, '再试一次', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '27px',
+      color: '#e7f3ee',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(UI_DEPTH_BASE + 144).setScrollFactor(0).setVisible(false);
+
+    const homeBtn = this.add.rectangle(VIEW_WIDTH - 132, VIEW_HEIGHT - 44, 220, 56, 0x14232f, 0.96)
+      .setStrokeStyle(2, 0x7cb0d0)
+      .setDepth(UI_DEPTH_BASE + 143)
+      .setScrollFactor(0)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    const homeTxt = this.add.text(VIEW_WIDTH - 132, VIEW_HEIGHT - 44, '回到首页', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '27px',
+      color: '#e4eef8',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(UI_DEPTH_BASE + 144).setScrollFactor(0).setVisible(false);
+
+    this.settlementDialog = {
+      bg,
+      dim,
+      title,
+      message,
+      detail,
+      retryBtn,
+      retryTxt,
+      homeBtn,
+      homeTxt,
+    };
+    this.setSettlementDialogVisible(false, false);
+
+    retryBtn.on('pointerdown', () => {
+      this.registry.set('missionConfig', this.missionConfig);
+      this.scene.restart(this.missionConfig);
+    });
+    homeBtn.on('pointerdown', () => {
+      this.scene.start('MainMenuScene');
+    });
+  }
+
+  private setSettlementDialogVisible(visible: boolean, allowRetry: boolean): void {
+    if (!this.settlementDialog) return;
+    const {
+      bg,
+      dim,
+      title,
+      message,
+      detail,
+      retryBtn,
+      retryTxt,
+      homeBtn,
+      homeTxt,
+    } = this.settlementDialog;
+    [bg, dim, title, message, detail, homeBtn, homeTxt].forEach((obj) => obj.setVisible(visible));
+    const retryVisible = visible && allowRetry;
+    [retryBtn, retryTxt].forEach((obj) => obj.setVisible(retryVisible));
+
+    const setInputEnabled = (obj: Phaser.GameObjects.GameObject, enabled: boolean): void => {
+      const inputObj = (obj as unknown as { input?: Phaser.Types.Input.InputConfiguration & { enabled?: boolean } }).input;
+      if (inputObj && typeof inputObj.enabled === 'boolean') inputObj.enabled = enabled;
+    };
+    setInputEnabled(dim, visible);
+    setInputEnabled(homeBtn, visible);
+    setInputEnabled(retryBtn, retryVisible);
+  }
+
+  private showSettlementDialog(titleText: string, messageText: string, allowRetry: boolean): void {
+    if (this.resultShown) return;
+    this.resultShown = true;
+    this.bannerHideEvent?.remove(false);
+    this.banner.setVisible(false);
+    this.dialogueOverlay?.hide();
+    if (this.lootPanelOpen) {
+      this.lootPanelOpen = false;
+      this.refreshLootPanel();
+    }
+    this.interactionRing.setVisible(false);
+    this.interactionWorldHint.setVisible(false);
+    this.setCampfireConfirmVisible(false);
+    this.setFailureDialogVisible(false);
+    this.recoveryUseUntil = 0;
+    this.recoveryUseItemLabel = '';
+    this.recoveryUseHealAmount = 0;
+    this.recoveryProgressBar.clear();
+    this.recoveryProgressBar.setVisible(false);
+    this.recoveryProgressLabel.setVisible(false);
+    this.reloadFinishAt = 0;
+    this.reloadStartAt = 0;
+    this.reloadDurationMs = 0;
+    this.reloadProgressBar.clear();
+    this.reloadProgressBar.setVisible(false);
+    this.reloadProgressLabel.setVisible(false);
+
+    if (!this.settlementDialog) return;
+    const survivedSeconds = Math.max(0, Math.floor((this.time.now - this.missionStartAt) / 1000));
+    const settledCollected = this.suppliesDelivered ? this.objectiveNeed : this.objectiveCollected;
+    this.settlementDialog.title.setText(titleText);
+    this.settlementDialog.message.setText(messageText);
+    this.settlementDialog.detail.setText(
+      `关键补给 ${settledCollected}/${this.objectiveNeed}  |  敌军残余 ${this.enemies.length}  |  生存时间 ${survivedSeconds}s`,
+    );
+    this.setSettlementDialogVisible(true, allowRetry);
+  }
+
   private createCampfireConfirmDialog(): void {
     const panel = this.add.rectangle(VIEW_WIDTH / 2, VIEW_HEIGHT - 160, 560, 132, 0x10191d, 0.95)
       .setStrokeStyle(2, 0x6f8a83, 0.95)
@@ -3165,6 +3370,15 @@ class MissionScene extends Phaser.Scene {
       fontSize: '13px',
       color: '#d7efe2',
     }).setOrigin(0.5, 1).setDepth(241).setVisible(false);
+  }
+
+  private createReloadProgressUi(): void {
+    this.reloadProgressBar = this.add.graphics().setDepth(242).setVisible(false);
+    this.reloadProgressLabel = this.add.text(0, 0, '换弹中...', {
+      fontFamily: 'Noto Sans SC, PingFang SC, sans-serif',
+      fontSize: '13px',
+      color: '#f6ead0',
+    }).setOrigin(0.5, 1).setDepth(243).setVisible(false);
   }
 
   private createDialogueOverlay(): void {
@@ -3544,6 +3758,7 @@ class MissionScene extends Phaser.Scene {
     this.handleSkills(time);
     this.handleReload(time);
     this.updateRecoveryUse(time);
+    this.updateReloadProgress(time);
     this.movePlayer(delta);
     this.updateEnemies();
     this.updateNpcs(time, delta);
@@ -3602,7 +3817,7 @@ class MissionScene extends Phaser.Scene {
     const barHeight = 12;
     const fillHeight = 6;
     const barX = this.player.x - barWidth * 0.5;
-    const barY = this.player.y - Math.max(44, Math.round(this.player.displayHeight * 0.78));
+    const barY = this.player.y - Math.max(44, Math.round(this.player.displayHeight * 0.78)) + 10;
 
     this.recoveryProgressBar
       .setVisible(true)
@@ -3630,6 +3845,38 @@ class MissionScene extends Phaser.Scene {
     this.recoveryProgressBar.clear();
     this.recoveryProgressBar.setVisible(false);
     this.recoveryProgressLabel.setVisible(false);
+  }
+
+  private updateReloadProgress(time: number): void {
+    if (this.reloadFinishAt <= time || this.reloadDurationMs <= 0) {
+      this.reloadProgressBar.clear();
+      this.reloadProgressBar.setVisible(false);
+      this.reloadProgressLabel.setVisible(false);
+      return;
+    }
+
+    const remain = this.reloadFinishAt - time;
+    const ratio = Phaser.Math.Clamp(1 - Math.max(0, remain) / this.reloadDurationMs, 0, 1);
+    const barWidth = 76;
+    const barHeight = 12;
+    const fillHeight = 6;
+    const barX = this.player.x - barWidth * 0.5;
+    const barY = this.player.y - Math.max(62, Math.round(this.player.displayHeight * 1.02)) + 10;
+
+    this.reloadProgressBar
+      .setVisible(true)
+      .clear();
+    this.reloadProgressBar.fillStyle(0x000000, 0.45);
+    this.reloadProgressBar.fillRoundedRect(barX, barY, barWidth, barHeight, 4);
+    this.reloadProgressBar.lineStyle(1.5, 0xdcb680, 0.95);
+    this.reloadProgressBar.strokeRoundedRect(barX, barY, barWidth, barHeight, 4);
+    this.reloadProgressBar.fillStyle(0xf5d28a, 0.95);
+    this.reloadProgressBar.fillRoundedRect(barX + 4, barY + 3, Math.max(0, (barWidth - 8) * ratio), fillHeight, 3);
+
+    this.reloadProgressLabel
+      .setVisible(true)
+      .setText('换弹中')
+      .setPosition(this.player.x, barY - 2);
   }
 
   private healPlayer(amount: number): number {
@@ -3696,6 +3943,45 @@ class MissionScene extends Phaser.Scene {
     this.syncObjectiveProgress();
     this.hudHint.setText(`篝火合成完成：消耗 ${CAMPFIRE_CRAFT_COST} 片赤甲肉，获得熟食。`);
     this.showBannerMessage('熟食 +1（按 5 使用）', 1400);
+  }
+
+  private consumeCriticalSuppliesForSubmit(needCount: number): number {
+    let remain = needCount;
+    for (let i = this.inventory.length - 1; i >= 0 && remain > 0; i -= 1) {
+      const stack = this.inventory[i];
+      if (!isCriticalSupply(stack.id) || stack.count <= 0) continue;
+      const used = Math.min(stack.count, remain);
+      stack.count -= used;
+      remain -= used;
+      if (stack.count <= 0) {
+        this.inventory.splice(i, 1);
+      }
+    }
+    return needCount - remain;
+  }
+
+  private trySubmitCriticalSupplies(): void {
+    if (this.suppliesDelivered) {
+      this.hudHint.setText('关键补给已提交，行动结算中。');
+      return;
+    }
+
+    if (this.objectiveCollected < this.objectiveNeed) {
+      const remain = this.objectiveNeed - this.objectiveCollected;
+      this.hudHint.setText(`提交失败：关键补给不足，还需 ${remain} 份。`);
+      return;
+    }
+
+    const submitted = this.consumeCriticalSuppliesForSubmit(this.objectiveNeed);
+    if (submitted < this.objectiveNeed) {
+      this.syncObjectiveProgress();
+      this.hudHint.setText('提交失败：关键补给校验异常。');
+      return;
+    }
+
+    this.suppliesDelivered = true;
+    this.syncObjectiveProgress();
+    this.showResult(getMissionSuccessText(this.objectiveNeed));
   }
 
   private updatePressure(time: number): void {
@@ -3792,7 +4078,7 @@ class MissionScene extends Phaser.Scene {
 
     let line: string | null = null;
     if (npc.name === '花木兰') {
-      if (this.objectiveCollected >= this.objectiveNeed) line = '花木兰：\n补给已齐，准备掩护撤离。';
+      if (this.objectiveCollected >= this.objectiveNeed) line = '花木兰：\n补给已齐，回主城提交处，我来掩护。';
       else if (this.pressure >= 75) line = '花木兰：\n外圈压力上升，先守住城门。';
     } else if (npc.name === '铠') {
       if (nearestEnemy < 190) line = '铠：\n近战冲过来了，我去前压。';
@@ -4076,7 +4362,7 @@ class MissionScene extends Phaser.Scene {
 
     const currentMag = this.weaponMags[weapon.id];
     if (currentMag <= 0) {
-      this.hudHint.setText('寮瑰專涓虹┖锛屾寜 R 鎹㈠脊');
+      this.hudHint.setText('弹药不足，请换弹');
       return;
     }
 
@@ -4179,6 +4465,8 @@ class MissionScene extends Phaser.Scene {
       this.hudHint.setText('没有可用弹药了。');
       return;
     }
+    this.reloadStartAt = time;
+    this.reloadDurationMs = weapon.reloadMs;
     this.reloadFinishAt = time + weapon.reloadMs;
     this.hudHint.setText('正在换弹...');
   }
@@ -4187,6 +4475,8 @@ class MissionScene extends Phaser.Scene {
     const weapon = this.currentWeapon();
     if (!weapon.ammoType) {
       this.reloadFinishAt = 0;
+      this.reloadStartAt = 0;
+      this.reloadDurationMs = 0;
       return;
     }
     const need = weapon.magSize - this.weaponMags[weapon.id];
@@ -4195,6 +4485,11 @@ class MissionScene extends Phaser.Scene {
     this.weaponMags[weapon.id] += load;
     this.reserveAmmo[weapon.ammoType] -= load;
     this.reloadFinishAt = 0;
+    this.reloadStartAt = 0;
+    this.reloadDurationMs = 0;
+    this.reloadProgressBar.clear();
+    this.reloadProgressBar.setVisible(false);
+    this.reloadProgressLabel.setVisible(false);
   }
 
   private handleSlotSwitch(): void {
@@ -4303,10 +4598,22 @@ class MissionScene extends Phaser.Scene {
     return dist < maxDistance ? this.campfireStation : undefined;
   }
 
+  private getNearbySupplySubmit(maxDistance = 92): SupplySubmitStation | undefined {
+    if (!this.supplySubmitStation) return undefined;
+    const dist = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.supplySubmitStation.sprite.x,
+      this.supplySubmitStation.sprite.y,
+    );
+    return dist < maxDistance ? this.supplySubmitStation : undefined;
+  }
+
   private updateInteractionFocus(): void {
     const nearestNpc = this.getNearbyNpc(112);
     const nearestLoot = this.getNearbyLoot(96);
     const nearestCampfire = this.getNearbyCampfire(108);
+    const nearestSubmit = this.getNearbySupplySubmit(112);
     if (this.campfireAwaitConfirm && !nearestCampfire) {
       this.setCampfireConfirmVisible(false);
     }
@@ -4315,9 +4622,13 @@ class MissionScene extends Phaser.Scene {
     const campfireDist = nearestCampfire
       ? Phaser.Math.Distance.Between(this.player.x, this.player.y, nearestCampfire.sprite.x, nearestCampfire.sprite.y)
       : Number.POSITIVE_INFINITY;
+    const submitDist = nearestSubmit
+      ? Phaser.Math.Distance.Between(this.player.x, this.player.y, nearestSubmit.sprite.x, nearestSubmit.sprite.y)
+      : Number.POSITIVE_INFINITY;
 
     let nextTarget: typeof this.activeInteractionTarget;
-    if (npcDist <= lootDist && npcDist <= campfireDist && nearestNpc) nextTarget = { type: 'npc', ref: nearestNpc };
+    if (npcDist <= lootDist && npcDist <= campfireDist && npcDist <= submitDist && nearestNpc) nextTarget = { type: 'npc', ref: nearestNpc };
+    else if (submitDist <= campfireDist && submitDist <= lootDist && nearestSubmit) nextTarget = { type: 'submit', ref: nearestSubmit };
     else if (campfireDist <= lootDist && nearestCampfire) nextTarget = { type: 'campfire', ref: nearestCampfire };
     else if (nearestLoot) nextTarget = { type: 'loot', ref: nearestLoot };
     else nextTarget = undefined;
@@ -4335,12 +4646,16 @@ class MissionScene extends Phaser.Scene {
       ? Math.max(20, Math.round(targetSprite.displayHeight * 0.35))
       : nextTarget.type === 'campfire'
         ? Math.max(18, Math.round(targetSprite.displayHeight * 0.2))
-        : Math.max(16, Math.round(targetSprite.displayHeight * 0.22));
+        : nextTarget.type === 'submit'
+          ? Math.max(18, Math.round(targetSprite.displayHeight * 0.26))
+          : Math.max(16, Math.round(targetSprite.displayHeight * 0.22));
     const ringScale = nextTarget.type === 'npc'
       ? Phaser.Math.Clamp(targetSprite.displayWidth / 54, 1, 1.7)
       : nextTarget.type === 'campfire'
         ? 0.88
-        : 0.92;
+        : nextTarget.type === 'submit'
+          ? 0.94
+          : 0.92;
     this.interactionRing
       .setVisible(true)
       .setPosition(targetSprite.x, targetSprite.y + ringYOffset)
@@ -4349,6 +4664,8 @@ class MissionScene extends Phaser.Scene {
     const worldHintYOffset = Math.max(42, Math.round(targetSprite.displayHeight * 0.52));
     const hintText = nextTarget.type === 'npc'
       ? `F 交谈：${(nextTarget.ref as NpcUnit).name}`
+      : nextTarget.type === 'submit'
+        ? `F 提交物资：${(nextTarget.ref as SupplySubmitStation).title}`
       : nextTarget.type === 'campfire'
         ? (this.campfireAwaitConfirm
           ? `F 确认烹饪：${(nextTarget.ref as CampfireStation).title}`
@@ -4373,6 +4690,18 @@ class MissionScene extends Phaser.Scene {
         : `F 篝火烹饪：${nearbyCampfire.title} | ${nearbyCampfire.prompt}`;
     }
 
+    const nearbySubmit = this.getNearbySupplySubmit();
+    if (nearbySubmit) {
+      if (this.suppliesDelivered) {
+        return `F 提交物资：${nearbySubmit.title} | 已完成提交，等待结算`;
+      }
+      if (this.objectiveCollected >= this.objectiveNeed) {
+        return `F 提交物资：${nearbySubmit.title} | 关键补给已齐，按 F 提交`;
+      }
+      const remain = this.objectiveNeed - this.objectiveCollected;
+      return `F 提交物资：${nearbySubmit.title} | 还需 ${remain} 份关键补给`;
+    }
+
     const nearbyLoot = this.getNearbyLoot();
     if (nearbyLoot) {
       return `F 搜索：${nearbyLoot.title} | ${nearbyLoot.prompt ?? '检查补给'}${nearbyLoot.hint ? ` | ${nearbyLoot.hint}` : ''}`;
@@ -4383,7 +4712,7 @@ class MissionScene extends Phaser.Scene {
     }
 
     if (this.objectiveCollected >= this.objectiveNeed) {
-      return '目标完成，立刻组织回撤。';
+      return '关键补给已齐，返回主城提交处完成行动。';
     }
 
     return '优先补给：军粮、药材、器械部件。';
@@ -4399,7 +4728,7 @@ class MissionScene extends Phaser.Scene {
       if (this.campfireAwaitConfirm) {
         this.setCampfireConfirmVisible(false);
       }
-      this.hudHint.setText('附近没有可交互友军、篝火或补给点。');
+      this.hudHint.setText('附近没有可交互友军、篝火、提交处或补给点。');
       return;
     }
 
@@ -4438,6 +4767,14 @@ class MissionScene extends Phaser.Scene {
       return;
     }
 
+    if (target.type === 'submit') {
+      if (this.campfireAwaitConfirm) {
+        this.setCampfireConfirmVisible(false);
+      }
+      this.trySubmitCriticalSupplies();
+      return;
+    }
+
     if (this.campfireAwaitConfirm) {
       this.setCampfireConfirmVisible(false);
     }
@@ -4455,7 +4792,7 @@ class MissionScene extends Phaser.Scene {
       }
       return `补给进度 ${this.objectiveCollected}/${this.objectiveNeed}。优先军粮、药材与器械部件。`;
     }
-    return '关键补给已达标，避免额外交战并安全回城。';
+    return '关键补给已达标，返回主城提交处完成任务。';
   }
 
   private getNoviceGuideHint(): string | null {
@@ -4657,7 +4994,7 @@ class MissionScene extends Phaser.Scene {
         '操作：WASD 移动  Shift 冲刺  鼠标左键 射击  F 交互  R 换弹  5 恢复品（熟食/草药包/绷带）  Tab 背包  H 切换界面',
       );
     } else {
-      this.hudHint.setText('关键补给已达标，保持安全并返回城内。');
+      this.hudHint.setText('关键补给已齐，返回主城物资提交处（F）完成行动。');
     }
 
     const cdQ = Math.max(0, Math.ceil((this.skillScanReadyAt - this.time.now) / 1000));
@@ -4753,6 +5090,10 @@ class MissionScene extends Phaser.Scene {
     if (this.campfireStation) {
       this.campfireStation.sprite.setDepth(205 + this.campfireStation.sprite.y);
       this.campfireStation.shadow.setDepth(185 + this.campfireStation.shadow.y);
+    }
+    if (this.supplySubmitStation) {
+      this.supplySubmitStation.sprite.setDepth(205 + this.supplySubmitStation.sprite.y);
+      this.supplySubmitStation.shadow.setDepth(185 + this.supplySubmitStation.shadow.y);
     }
   }
 
@@ -5042,9 +5383,6 @@ class MissionScene extends Phaser.Scene {
       this.showFailureDialog();
       return;
     }
-    if (this.objectiveCollected >= this.objectiveNeed) {
-      this.showResult(getMissionSuccessText(this.objectiveCollected));
-    }
   }
 
   private showFailureDialog(): void {
@@ -5060,28 +5398,24 @@ class MissionScene extends Phaser.Scene {
     this.interactionRing.setVisible(false);
     this.interactionWorldHint.setVisible(false);
     this.setCampfireConfirmVisible(false);
+    this.setSettlementDialogVisible(false, false);
     this.recoveryUseUntil = 0;
     this.recoveryUseItemLabel = '';
     this.recoveryUseHealAmount = 0;
     this.recoveryProgressBar.clear();
     this.recoveryProgressBar.setVisible(false);
     this.recoveryProgressLabel.setVisible(false);
+    this.reloadFinishAt = 0;
+    this.reloadStartAt = 0;
+    this.reloadDurationMs = 0;
+    this.reloadProgressBar.clear();
+    this.reloadProgressBar.setVisible(false);
+    this.reloadProgressLabel.setVisible(false);
     this.setFailureDialogVisible(true);
   }
 
   private showResult(message: string): void {
-    if (this.resultShown) return;
-    this.resultShown = true;
-    this.bannerHideEvent?.remove(false);
-    this.banner.setText(message).setVisible(true);
-    this.setCampfireConfirmVisible(false);
-    this.recoveryUseUntil = 0;
-    this.recoveryUseItemLabel = '';
-    this.recoveryUseHealAmount = 0;
-    this.recoveryProgressBar.clear();
-    this.recoveryProgressBar.setVisible(false);
-    this.recoveryProgressLabel.setVisible(false);
-    this.time.delayedCall(2600, () => this.scene.start('MainMenuScene'));
+    this.showSettlementDialog('行动完成', message, false);
   }
 }
 
